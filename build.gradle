@@ -1,0 +1,38 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+application {
+    // ./gradlew run runs one simulated dispatch and writes demo.db (see README).
+    mainClass = 'io.github.vanneka.vppdispatch.Demo'
+}
+
+group = 'io.github.vanneka'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Durable dispatch progress is kept in a single SQLite file.
+    implementation 'org.xerial:sqlite-jdbc:3.46.1.0'
+
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+    }
+}
