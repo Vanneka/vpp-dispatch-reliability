@@ -39,7 +39,7 @@ A summary of the dispatch is always built from what is in the database, never fr
 
 **A deliberately simple device selector.** Largest available devices first, until the target is covered. Real platforms weigh many more factors, such as device state, forecasts, and customer settings (see Zhang et al., 2019, §2.2, on static and dynamic DER parameters). Selection is not what this repository is about.
 
-## The known gap (closed in v0.2.0)
+## The known gap (planned fix: v0.2.0)
 
 In v0.1.0 the coordinator does this for each device:
 

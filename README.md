@@ -145,3 +145,6 @@ data/           created by ./gradlew run; holds demo.db (not committed)
 - M. Culler et al., *Virtual Power Plant Architecture and Resilient Design*, INL/RPT-26-89692, Idaho National Laboratory, January 2026. https://inl.gov/content/uploads/2026/01/VPP-Architecture-and-Design-Report__Final.pdf
 - Common Smart Inverter Profile Working Group, *Common Smart Inverter Profile: IEEE 2030.5 Implementation Guide for Smart Inverters*, v2.1, March 2018. https://sunspec.org/wp-content/uploads/2025/01/CSIPImplementationGuidev2.103-15-2018.pdf
 - G. Zhang, C. Jiang, X. Wang, "Comprehensive review on structure and operation of virtual power plant in electrical system," *IET Generation, Transmission & Distribution* 13(2), 145–156, 2019. https://doi.org/10.1049/iet-gtd.2018.5880
+
+## License
+Apache-2.0. See [LICENSE](LICENSE).
