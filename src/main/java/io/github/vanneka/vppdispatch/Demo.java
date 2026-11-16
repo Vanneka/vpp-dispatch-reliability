@@ -46,20 +46,23 @@ public final class Demo {
         // that was sent but never confirmed.
         fleet.device("battery-2").injectFault(SimulatedFault.DROP_RESPONSE);
 
+        // Fields modeled on an IEEE 2030.5 DERControl event: mRID, creation time,
+        // and an absolute start time and duration.
         DispatchRequest request = new DispatchRequest(
-                "demo-dispatch", 12, Instant.parse("2026-07-15T21:00:00Z"), Duration.ofHours(2));
+                "DEMO0001", Instant.parse("2026-07-15T18:00:00Z"), 12,
+                Instant.parse("2026-07-15T21:00:00Z"), Duration.ofHours(2));
 
         try (SqliteDispatchStore store = new SqliteDispatchStore(databaseFile)) {
             DispatchSummary summary = new DispatchCoordinator(fleet, store).run(request);
 
-            System.out.println("Simulated dispatch: " + request.targetKw() + " kW requested");
-            for (StoredCommand entry : store.commandsFor(request.dispatchId())) {
+            System.out.println("Simulated dispatch " + request.mrid() + ": " + request.targetKw() + " kW requested");
+            for (StoredCommand entry : store.commandsFor(request.mrid())) {
                 System.out.printf("  %-10s %2d kW  %s%n",
                         entry.command().deviceId(), entry.command().targetKw(), entry.state());
             }
-            System.out.printf("Planned %d kW, confirmed %d kW (%d of %d responses recorded)%n",
+            System.out.printf("Planned %d kW, confirmed %d kW (%d of %d confirmations recorded)%n",
                     summary.plannedKw(), summary.confirmedKw(),
-                    summary.responsesRecorded(), summary.commandsPlanned());
+                    summary.confirmationsRecorded(), summary.commandsPlanned());
         }
 
         System.out.println();

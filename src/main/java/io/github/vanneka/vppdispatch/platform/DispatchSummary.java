@@ -3,14 +3,16 @@ package io.github.vanneka.vppdispatch.platform;
 /**
  * What the platform knows about a dispatch after sending it.
  *
- * @param plannedKw   total power the chosen devices were asked to deliver
- * @param confirmedKw power from devices whose response was recorded
+ * @param mrid                  the utility's event ID
+ * @param confirmationsRecorded commands whose device confirmed it has them (RECEIVED)
+ * @param plannedKw             total power the chosen devices were asked to deliver
+ * @param confirmedKw           power from devices whose confirmation was recorded
  */
 public record DispatchSummary(
-        String dispatchId,
+        String mrid,
         int commandsPlanned,
         int commandsSent,
-        int responsesRecorded,
+        int confirmationsRecorded,
         int plannedKw,
         int confirmedKw) {
 }

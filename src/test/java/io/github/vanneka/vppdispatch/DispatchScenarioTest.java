@@ -31,9 +31,15 @@ class DispatchScenarioTest {
 
     private static final Instant FIVE_PM = Instant.parse("2026-07-15T21:00:00Z");
     private static final Duration TWO_HOURS = Duration.ofHours(2);
+    private static final Instant CREATED = Instant.parse("2026-07-15T18:00:00Z");
 
     @TempDir
     Path tempDir;
+
+    /** An event modeled on a DERControl: mRID, creation time, absolute start and duration. */
+    private static DispatchRequest event(String mrid, int targetKw) {
+        return new DispatchRequest(mrid, CREATED, targetKw, FIVE_PM, TWO_HOURS);
+    }
 
     private static SimulatedFleet fourBatteries() {
         return new SimulatedFleet()
@@ -46,7 +52,7 @@ class DispatchScenarioTest {
     @Test
     void everyDeviceConfirms_progressIsSavedToTheDatabase() {
         SimulatedFleet fleet = fourBatteries();
-        DispatchRequest request = new DispatchRequest("dispatch-1", 12, FIVE_PM, TWO_HOURS);
+        DispatchRequest request = event("dispatch-1", 12);
 
         try (SqliteDispatchStore store = new SqliteDispatchStore(tempDir.resolve("progress.db"))) {
             DispatchSummary summary = new DispatchCoordinator(fleet, store).run(request);
@@ -54,12 +60,12 @@ class DispatchScenarioTest {
             // Largest devices first: 5 + 5 + 2 (battery-3 is asked only for what is left).
             assertEquals(3, summary.commandsPlanned());
             assertEquals(3, summary.commandsSent());
-            assertEquals(3, summary.responsesRecorded());
+            assertEquals(3, summary.confirmationsRecorded());
             assertEquals(12, summary.plannedKw());
             assertEquals(12, summary.confirmedKw());
 
             List<StoredCommand> saved = store.commandsFor("dispatch-1");
-            assertTrue(saved.stream().allMatch(c -> c.state() == CommandState.RESPONDED));
+            assertTrue(saved.stream().allMatch(c -> c.state() == CommandState.RECEIVED));
             assertEquals(2, saved.get(2).command().targetKw());
         }
 
@@ -72,13 +78,13 @@ class DispatchScenarioTest {
     void droppedResponse_commandIsRecordedAsSentButNotConfirmed() {
         SimulatedFleet fleet = fourBatteries();
         fleet.device("battery-2").injectFault(SimulatedFault.DROP_RESPONSE);
-        DispatchRequest request = new DispatchRequest("dispatch-2", 10, FIVE_PM, TWO_HOURS);
+        DispatchRequest request = event("dispatch-2", 10);
 
         try (SqliteDispatchStore store = new SqliteDispatchStore(tempDir.resolve("progress.db"))) {
             DispatchSummary summary = new DispatchCoordinator(fleet, store).run(request);
 
             assertEquals(2, summary.commandsSent());
-            assertEquals(1, summary.responsesRecorded());
+            assertEquals(1, summary.confirmationsRecorded());
             assertEquals(10, summary.plannedKw());
             assertEquals(5, summary.confirmedKw());
 
@@ -98,7 +104,7 @@ class DispatchScenarioTest {
         Path databaseFile = tempDir.resolve("progress.db");
         SimulatedFleet fleet = fourBatteries();
         fleet.device("battery-1").injectFault(SimulatedFault.DROP_RESPONSE);
-        DispatchRequest request = new DispatchRequest("dispatch-3", 10, FIVE_PM, TWO_HOURS);
+        DispatchRequest request = event("dispatch-3", 10);
 
         try (SqliteDispatchStore store = new SqliteDispatchStore(databaseFile)) {
             new DispatchCoordinator(fleet, store).run(request);
@@ -110,14 +116,14 @@ class DispatchScenarioTest {
 
             assertEquals(2, summary.commandsPlanned());
             assertEquals(2, summary.commandsSent());
-            assertEquals(1, summary.responsesRecorded());
+            assertEquals(1, summary.confirmationsRecorded());
             assertEquals(5, summary.confirmedKw());
         }
     }
 
     @Test
     void failedSave_leavesNoPartOfThePlanBehind() {
-        DispatchRequest request = new DispatchRequest("dispatch-5", 10, FIVE_PM, TWO_HOURS);
+        DispatchRequest request = event("dispatch-5", 10);
         DeviceCommand first = DeviceCommand.forDevice(request, "battery-1", 5);
         // Same device twice gives the same command ID, so the second insert fails.
         List<DeviceCommand> brokenPlan = List.of(first, first);
@@ -135,7 +141,7 @@ class DispatchScenarioTest {
     @Test
     void notEnoughCapacity_nothingIsSaved() {
         SimulatedFleet fleet = fourBatteries(); // 17 kW in total
-        DispatchRequest request = new DispatchRequest("dispatch-4", 50, FIVE_PM, TWO_HOURS);
+        DispatchRequest request = event("dispatch-4", 50);
 
         try (SqliteDispatchStore store = new SqliteDispatchStore(tempDir.resolve("progress.db"))) {
             assertThrows(InsufficientCapacityException.class,

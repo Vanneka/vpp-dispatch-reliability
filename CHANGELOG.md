@@ -2,6 +2,32 @@
 
 All notable changes to this project are recorded here. Versions follow [semantic versioning](https://semver.org/); 0.x releases are pre-releases.
 
+## [Unreleased]
+
+### Added
+- Tests run automatically on GitHub (GitHub Actions) on every push and pull request.
+- Incoming requests modeled on the IEEE 2030.5 DERControl event (as shown in CSIP v2.1, Figure 12): `mRID`, `creationTime`, absolute start time and duration, absolute requested power. A plain Java model, not the wire format.
+- Device command IDs built from the utility's event ID: `mrid:deviceId`, never from the platform's clock.
+- Forward-only command states: a recorded state only moves from `PLANNED` to `SENT` to `RECEIVED`, never back, enforced inside the SQL `UPDATE`.
+- A simulated utility server that keeps the list of issued events.
+- Tests: forward-only states, and event identity (the same event twice is not sent again; two different events with the same time and value are both dispatched).
+- Primary and backup platform instances sharing one SQLite file, with a lease (10 s, renewed about every 3 s) deciding which one is in charge, behind a `LeaderElection` interface. The coordinator dispatches only while it holds the lease.
+- Injected clock for all lease timing, so tests move time forward without waiting.
+- A simulated crash that stops the primary right after sending a command and before recording it (tests only).
+- Tests: the backup takes over only after the lease expires; an instance without the lease cannot dispatch; a crash between sending and recording leaves the record at `PLANNED` while the device holds the command.
+- README note: "Simulation, not a deployment."
+- Both database connections wait briefly for each other's writes (`busy_timeout`) instead of failing at once.
+
+### Changed
+- `RESPONDED` is now `RECEIVED`: the device's control unit confirmed the device has the command (delivery, not completion).
+- `DispatchStore.markSent` and `markReceived` (was `markResponded`) return whether the record moved forward; an unknown command ID is still an error.
+- The coordinator does not plan or send an event that is already saved.
+- README shortened to a quick overview, quick start and release table; installation, demo details and troubleshooting moved to `docs/getting-started.md`; code layout moved to `docs/design.md`. Added a test-status badge.
+- The database schema identifies dispatches by `mrid` and stores `creation_time`. Databases created by v0.1.0 are not compatible; the demo creates a new file on every run.
+
+### Fixed
+- Removed a duplicate license section from the end of `docs/design.md` (its link did not resolve from the `docs/` folder; the README has the license section).
+
 ## [0.1.0] - 2026-11-09
 
 ### Added

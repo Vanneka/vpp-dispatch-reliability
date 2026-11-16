@@ -20,6 +20,7 @@ public final class SimulatedDevice {
     private final int availableKw;
     private SimulatedFault fault;
     private DeviceCommand heldCommand;
+    private int commandsReceived;
 
     public SimulatedDevice(String deviceId, int availableKw) {
         this.deviceId = Objects.requireNonNull(deviceId, "deviceId");
@@ -48,6 +49,14 @@ public final class SimulatedDevice {
     }
 
     /**
+     * How many commands this device has been sent, counting repeats. Tests use it to
+     * check whether the platform sent a command again.
+     */
+    public int commandsReceived() {
+        return commandsReceived;
+    }
+
+    /**
      * Receives a command and returns the device's response. An empty result means
      * the response was lost on the way back, even though the device has the command.
      */
@@ -57,6 +66,7 @@ public final class SimulatedDevice {
                     "command for " + command.deviceId() + " sent to " + deviceId);
         }
         heldCommand = command;
+        commandsReceived++;
         // No default branch on purpose: adding a new fault fails to compile here
         // until its behavior is decided.
         return switch (fault) {
