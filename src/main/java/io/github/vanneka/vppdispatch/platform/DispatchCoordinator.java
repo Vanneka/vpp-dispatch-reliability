@@ -10,22 +10,22 @@ import io.github.vanneka.vppdispatch.protocol.DispatchRequest;
 import io.github.vanneka.vppdispatch.storage.CommandState;
 import io.github.vanneka.vppdispatch.storage.DispatchStore;
 import io.github.vanneka.vppdispatch.storage.StoredCommand;
+import io.github.vanneka.vppdispatch.utility.SimulatedUtilityServer;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Runs a dispatch from start to finish on a single platform instance:
- * choose devices, save the plan, send each command, and record each response.
+ * Runs a dispatch: choose devices, save the plan, send each command, and record each
+ * response. Every step is saved as it happens.
  *
- * <p>Every step is written to the {@link DispatchStore} as it happens, right after
- * it happens. A dispatch is identified by the utility's event ID (mRID): running an
- * event that is already saved does not plan or send it again.
+ * <p>Only the server holding the lease dispatches. It checks before planning and
+ * before every send.
  *
- * <p>Only the instance in charge (the one holding the lease) dispatches. It checks
- * before planning and again before every send, and stops sending as soon as it no
- * longer holds the lease. Recovering a dispatch after a failover is planned for a later
- * step of v0.2.0; see docs/design.md.
+ * <p>After a failover, the backup calls {@link #recoverAfterFailover} to finish what the
+ * primary started. Sending a command again is safe: it has the same ID, the same
+ * absolute value and the same time window.
  */
 public final class DispatchCoordinator {
 
@@ -35,15 +35,12 @@ public final class DispatchCoordinator {
     private final LeaderElection leader;
     private final SimulatedCrash crash;
 
-    /** A coordinator for a single instance that is always in charge, with no crash. */
+    /** A coordinator for a single server that is always in charge, with no crash. */
     public DispatchCoordinator(SimulatedFleet fleet, DispatchStore store) {
         this(fleet, store, LeaderElection.alwaysInCharge(), SimulatedCrash.none());
     }
 
-    /**
-     * A coordinator that dispatches only while {@code leader} says it is in charge, and
-     * that stops at the moment {@code crash} chooses (tests only).
-     */
+    /** A coordinator that dispatches only while it holds the lease; {@code crash} is for tests. */
     public DispatchCoordinator(
             SimulatedFleet fleet, DispatchStore store, LeaderElection leader, SimulatedCrash crash) {
         this.fleet = Objects.requireNonNull(fleet, "fleet");
@@ -56,11 +53,10 @@ public final class DispatchCoordinator {
     public DispatchSummary run(DispatchRequest request) {
         if (!leader.holdsLease()) {
             throw new NotInChargeException(
-                    "this instance does not hold the lease; it cannot dispatch " + request.mrid());
+                    "this server does not hold the lease; it cannot dispatch " + request.mrid());
         }
 
-        // The same event (same mRID) is never planned twice. Finishing a dispatch that
-        // is already saved is the job of recovery, not of a second run.
+        // An event that is already saved is not planned again; recoverAfterFailover finishes it.
         if (store.hasDispatch(request.mrid())) {
             return summarize(request.mrid());
         }
@@ -70,8 +66,58 @@ public final class DispatchCoordinator {
         store.saveDispatch(request, commands);
 
         // 2. Send each command and record what happened.
+        sendInOrder(commands);
+
+        return summarize(request.mrid());
+    }
+
+    /**
+     * Recovery after a failover. For each event the utility has issued:
+     * <ul>
+     *   <li>Not saved yet: dispatch it now.</li>
+     *   <li>Saved: send again every command not yet {@code RECEIVED}.</li>
+     * </ul>
+     *
+     * <p>The plan is not changed, and sending stops if this server loses the lease.
+     *
+     * @return a summary for each event handled, built from the saved record
+     * @throws NotInChargeException if this server does not hold the lease
+     */
+    public List<DispatchSummary> recoverAfterFailover(SimulatedUtilityServer utility) {
+        Objects.requireNonNull(utility, "utility");
+        if (!leader.holdsLease()) {
+            throw new NotInChargeException(
+                    "this server does not hold the lease; it cannot recover dispatches");
+        }
+
+        List<DispatchSummary> summaries = new ArrayList<>();
+        for (DispatchRequest event : utility.events()) {
+            if (!leader.holdsLease()) {
+                break;
+            }
+            if (!store.hasDispatch(event.mrid())) {
+                summaries.add(run(event));
+                continue;
+            }
+            List<DeviceCommand> notYetReceived = new ArrayList<>();
+            for (StoredCommand entry : store.commandsFor(event.mrid())) {
+                if (entry.state() != CommandState.RECEIVED) {
+                    notYetReceived.add(entry.command());
+                }
+            }
+            sendInOrder(notYetReceived);
+            summaries.add(summarize(event.mrid()));
+        }
+        return summaries;
+    }
+
+    /**
+     * Sends each command in order. Records SENT after sending, and RECEIVED if the
+     * device responds. Stops if this server (the primary or the backup running this
+     * coordinator) loses the lease.
+     */
+    private void sendInOrder(List<DeviceCommand> commands) {
         for (int index = 0; index < commands.size(); index++) {
-            // Stop sending as soon as this instance is no longer in charge.
             if (!leader.holdsLease()) {
                 break;
             }
@@ -81,8 +127,6 @@ public final class DispatchCoordinator {
             store.markSent(command.commandId());
             response.ifPresent(r -> store.markReceived(r.commandId()));
         }
-
-        return summarize(request.mrid());
     }
 
     /** Builds a summary from what is saved in the store, not from memory. */

@@ -33,7 +33,7 @@ public final class SqliteDispatchStore implements DispatchStore {
         try (Statement statement = connection.createStatement()) {
             // SQLite only enforces REFERENCES when this is switched on for the connection.
             statement.execute("PRAGMA foreign_keys = ON");
-            // Two platform instances share this file; wait for the other's write to finish
+            // Two platform servers share this file; wait for the other's write to finish
             // instead of failing at once.
             statement.execute("PRAGMA busy_timeout = 5000");
             statement.executeUpdate("""
@@ -118,7 +118,7 @@ public final class SqliteDispatchStore implements DispatchStore {
 
     /**
      * Moves a command to {@code newState} only if it is currently in an earlier state.
-     * The check is part of the UPDATE itself, so even two platform instances writing
+     * The check is part of the UPDATE itself, so even two platform servers writing
      * to the same file cannot move a command backward (for example, a late "sent"
      * overwriting "received").
      */

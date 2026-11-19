@@ -13,22 +13,22 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * A lease stored as one row in the shared SQLite file: who holds it, and when it expires.
+ * A lease stored as one row in the shared SQLite file: who holds it and when it expires.
  *
- * <p>The holder renews the lease by pushing its expiry forward. Another instance can take
- * the lease only once it has expired. Each check-and-update is a single SQL statement, so
- * two instances using the same file cannot both win.
+ * <p>The server holding the lease renews it by moving its expiry time later. Another
+ * server can take the lease only after it expires. Each check-and-update is one SQL
+ * statement, so two servers cannot both win. Time comes from an injected {@link Clock}
+ * so tests don't have to wait.
  *
- * <p>Time comes from an injected {@link Clock}, so tests can move time forward without
- * waiting. Known limitation (fixed in v0.3.0): a primary that is paused rather than crashed
- * can wake up after its lease has expired and send a command before it checks again.
+ * <p>Known limitation (fixed in v0.3.0): a primary that is paused, not crashed, can wake
+ * after its lease expired and send a command before it checks again.
  */
 public final class SqliteLease implements LeaderElection, AutoCloseable {
 
     /** How long a lease lasts if it is not renewed. */
     public static final Duration LEASE_DURATION = Duration.ofSeconds(10);
 
-    /** How often a primary is expected to renew its lease (its heartbeat). */
+    /** How often the primary is expected to renew its lease. */
     public static final Duration RENEW_EVERY = Duration.ofSeconds(3);
 
     private static final String LEASE_NAME = "dispatch";
@@ -43,7 +43,7 @@ public final class SqliteLease implements LeaderElection, AutoCloseable {
         try {
             this.connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile.toAbsolutePath());
             try (Statement statement = connection.createStatement()) {
-                // Wait for the other instance's write to finish instead of failing at once.
+                // Wait for the other server's write to finish instead of failing at once.
                 statement.execute("PRAGMA busy_timeout = 5000");
                 statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS lease (
@@ -62,7 +62,7 @@ public final class SqliteLease implements LeaderElection, AutoCloseable {
         long now = clock.millis();
         long expiresAt = now + LEASE_DURATION.toMillis();
         try {
-            // First time anyone asks: create the lease with this instance as holder.
+            // First time anyone asks: create the lease with this server as holder.
             try (PreparedStatement insert = connection.prepareStatement(
                     "INSERT OR IGNORE INTO lease (name, holder, expires_at_ms) VALUES (?, ?, ?)")) {
                 insert.setString(1, LEASE_NAME);
@@ -72,7 +72,7 @@ public final class SqliteLease implements LeaderElection, AutoCloseable {
                     return true;
                 }
             }
-            // Otherwise: renew if this instance holds it, or take it if it has expired.
+            // Otherwise: renew if this server holds it, or take it if it has expired.
             try (PreparedStatement update = connection.prepareStatement("""
                     UPDATE lease SET holder = ?, expires_at_ms = ?
                     WHERE name = ? AND (holder = ? OR expires_at_ms <= ?)""")) {

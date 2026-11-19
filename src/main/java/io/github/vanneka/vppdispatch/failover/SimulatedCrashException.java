@@ -1,6 +1,6 @@
 package io.github.vanneka.vppdispatch.failover;
 
-/** Thrown when a {@link SimulatedCrash} stops a platform instance. Tests only. */
+/** Thrown when a {@link SimulatedCrash} stops a platform server. Tests only. */
 public final class SimulatedCrashException extends RuntimeException {
 
     public SimulatedCrashException(int commandIndex) {

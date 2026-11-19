@@ -1,28 +1,27 @@
 package io.github.vanneka.vppdispatch.failover;
 
 /**
- * Decides which platform instance is in charge of dispatching.
+ * Decides which server is in charge of dispatching.
  *
- * <p>Only one instance (the primary) may send commands at a time. If it stops, another
- * instance (the backup) takes its place: a failover. Real platforms usually get this
- * from their infrastructure (for example, Kubernetes uses Lease objects for
- * "component-level leader election"). This project uses a simple lease in SQLite as a
- * stand-in, so the recovery logic that comes after a failover can be shown and tested.
+ * <p>Only one server (the primary) sends commands at a time. If it stops, the backup
+ * becomes the primary: a failover. Real platforms usually get this from their
+ * infrastructure (for example, Kubernetes Lease objects for "component-level leader
+ * election"). Here a simple lease in SQLite stands in for it.
  */
 public interface LeaderElection {
 
     /**
-     * Tries to become, or stay, the instance in charge. A primary calls this regularly
-     * to renew its lease; this renewal is its heartbeat.
+     * Tries to become, or stay, the server in charge. The primary calls this every few
+     * seconds to renew its lease.
      *
-     * @return {@code true} if this instance holds the lease afterward
+     * @return {@code true} if this server holds the lease afterward
      */
     boolean tryAcquireOrRenew();
 
-    /** Whether this instance holds an unexpired lease right now. */
+    /** Whether this server holds an unexpired lease right now. */
     boolean holdsLease();
 
-    /** An election that always says this instance is in charge, for single-instance use. */
+    /** An election that always says this server is in charge, for single-server use. */
     static LeaderElection alwaysInCharge() {
         return new LeaderElection() {
             @Override

@@ -8,7 +8,7 @@ Open-source reference code for keeping a virtual power plant's (VPP's) dispatch 
 
 ## The problem in 30 seconds
 
-A VPP coordinates thousands of home batteries, but every dispatch decision runs through one software platform, which Idaho National Laboratory calls the "operational 'brain' of a VPP" and "a concentrated digital dependency for grid services" (INL, 2026, §7.2). Devices already have fallbacks when they lose contact (CSIP v2.1, §4.4.2). The platform needs its own: if its server fails partway through a dispatch, the backup that takes over must know which devices were already told what, and finish the job without skipping or doubling a command.
+A VPP coordinates thousands of home batteries, but every dispatch decision runs through one software platform, which Idaho National Laboratory calls the "operational 'brain' of a VPP" and "a concentrated digital dependency for grid services" (INL, 2026, §7.2). Devices already have fallbacks when they lose contact (CSIP v2.1, §4.4.2). The platform needs its own: if its server fails partway through a dispatch, the backup must know which devices were already told what, and finish the job without skipping or doubling a command.
 
 Read more: [Failover Isn't Enough: The Half-Finished Dispatch](https://vanneka-okeke.medium.com/failover-isnt-enough-the-half-finished-dispatch-b7815acd1148).
 

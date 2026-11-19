@@ -11,10 +11,12 @@ All notable changes to this project are recorded here. Versions follow [semantic
 - Forward-only command states: a recorded state only moves from `PLANNED` to `SENT` to `RECEIVED`, never back, enforced inside the SQL `UPDATE`.
 - A simulated utility server that keeps the list of issued events.
 - Tests: forward-only states, and event identity (the same event twice is not sent again; two different events with the same time and value are both dispatched).
-- Primary and backup platform instances sharing one SQLite file, with a lease (10 s, renewed about every 3 s) deciding which one is in charge, behind a `LeaderElection` interface. The coordinator dispatches only while it holds the lease.
+- Primary and backup platform servers sharing one SQLite file, with a lease (10 s, renewed about every 3 s) deciding which one is in charge, behind a `LeaderElection` interface. The coordinator dispatches only while it holds the lease.
 - Injected clock for all lease timing, so tests move time forward without waiting.
 - A simulated crash that stops the primary right after sending a command and before recording it (tests only).
-- Tests: the backup takes over only after the lease expires; an instance without the lease cannot dispatch; a crash between sending and recording leaves the record at `PLANNED` while the device holds the command.
+- Tests: the backup becomes the primary only after the lease expires; an server without the lease cannot dispatch; a crash between sending and recording leaves the record at `PLANNED` while the device holds the command.
+- Recovery after a failover (`DispatchCoordinator.recoverAfterFailover`): the new server in charge re-reads the utility's list of events, dispatches any event not in the record (for example, one issued while no server was in charge), and sends again every saved command not yet `RECEIVED`, in plan order, without changing the plan.
+- Tests: a crash between sending and recording (the backup sends again and each device ends with the planned command); a crash partway through the plan (the backup finishes it and sends nothing outside it); an event issued while no server was in charge; recovering twice sends nothing more; a lost response is sent again but stays `SENT`; an server without the lease cannot recover.
 - README note: "Simulation, not a deployment."
 - Both database connections wait briefly for each other's writes (`busy_timeout`) instead of failing at once.
 

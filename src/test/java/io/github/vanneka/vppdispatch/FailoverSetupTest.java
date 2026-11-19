@@ -76,7 +76,7 @@ class FailoverSetupTest {
     void backupDoesNotTakeOver_whilePrimaryKeepsRenewing() {
         assertTrue(primaryLease.tryAcquireOrRenew());
 
-        // The primary renews every few seconds (its heartbeat) for half a minute.
+        // The primary renews every few seconds for half a minute.
         for (int i = 0; i < 10; i++) {
             clock.advance(SqliteLease.RENEW_EVERY);
             assertTrue(primaryLease.tryAcquireOrRenew());
@@ -90,11 +90,11 @@ class FailoverSetupTest {
     void backupTakesOver_onceThePrimaryStopsRenewingAndTheLeaseExpires() {
         assertTrue(primaryLease.tryAcquireOrRenew());
 
-        // The primary stops renewing. Just before expiry, the backup still can't take over.
+        // The primary stops renewing. Just before expiry, the backup still can't take the lease.
         clock.advance(SqliteLease.LEASE_DURATION.minusSeconds(1));
         assertFalse(backupLease.tryAcquireOrRenew());
 
-        // Once the lease has expired, the backup takes over: a failover.
+        // Once the lease has expired, the backup takes the lease: a failover.
         clock.advance(Duration.ofSeconds(2));
         assertTrue(backupLease.tryAcquireOrRenew());
         assertTrue(backupLease.holdsLease());

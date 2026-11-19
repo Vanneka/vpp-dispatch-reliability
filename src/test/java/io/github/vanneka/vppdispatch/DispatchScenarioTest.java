@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Scenario tests for a single-instance dispatch. Each test builds a small simulated
+ * Scenario tests for a single-server dispatch. Each test builds a small simulated
  * fleet, runs a dispatch, and checks what the platform saved to the database.
  */
 class DispatchScenarioTest {
@@ -110,7 +110,7 @@ class DispatchScenarioTest {
             new DispatchCoordinator(fleet, store).run(request);
         }
 
-        // A fresh connection, as a restarted or backup instance would open.
+        // A fresh connection, as a restarted or backup server would open.
         try (SqliteDispatchStore reopened = new SqliteDispatchStore(databaseFile)) {
             DispatchSummary summary = new DispatchCoordinator(fleet, reopened).summarize("dispatch-3");
 

@@ -12,7 +12,7 @@ import java.util.Objects;
  * so this is not an IEEE 2030.5 resource.
  *
  * <p>The command ID is {@code mrid:deviceId}: built from the utility's event ID and the
- * device ID, never from the platform's clock. Any platform instance that reads the same
+ * device ID, never from the platform's clock. Any platform server that reads the same
  * event gets the same ID, so a command sent again after a restart is recognized as the
  * same command. Together with an absolute value and an absolute start time, this makes
  * a command safe to send twice.

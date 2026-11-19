@@ -7,7 +7,7 @@ import java.util.List;
 /**
  * Durable record of dispatch progress: which devices were chosen, which commands
  * were sent, and which were confirmed. Keeping this outside the running process is
- * what lets a backup instance pick up a dispatch in progress.
+ * what lets a backup server pick up a dispatch in progress.
  */
 public interface DispatchStore extends AutoCloseable {
 
