@@ -4,16 +4,15 @@ Everything you need to run the code and look at what it saved. Back to the [READ
 
 ## 1. Install Java 21
 
-You need **JDK 21** (Java Development Kit, version 21). You do **not** need to install Gradle: the project includes the Gradle wrapper (`gradlew`), which downloads the right version the first time you run it. Any JDK 21 distribution works; these commands install Eclipse Temurin:
+Any JDK 21 works. Gradle installs itself the first time you run `./gradlew`.
 
 | System | Command |
 |---|---|
-| macOS (Homebrew) | `brew install --cask temurin@21` |
-| macOS (no Homebrew) | Download the macOS `.pkg` for version 21 from [adoptium.net](https://adoptium.net/temurin/releases/?version=21) (*aarch64* for Apple-chip Macs, *x64* for Intel) |
+| macOS | `brew install --cask temurin@21` (or the `.pkg` from [adoptium.net](https://adoptium.net/temurin/releases/?version=21)) |
 | Windows | `winget install EclipseAdoptium.Temurin.21.JDK` |
 | Ubuntu / Debian | `sudo apt install openjdk-21-jdk` |
 
-Check it in a **new** terminal window: `java -version` should show version `21`.
+Check it in a **new** terminal: `java -version` should show `21`.
 
 ## 2. Get the code
 
@@ -22,9 +21,7 @@ git clone https://github.com/Vanneka/vpp-dispatch-reliability.git
 cd vpp-dispatch-reliability
 ```
 
-The first `./gradlew` command downloads Gradle and the project's two libraries (SQLite and JUnit), so it needs an internet connection and takes a minute or two. Later runs reuse the downloads.
-
-**On Windows,** use `gradlew.bat` wherever these instructions say `./gradlew`.
+The first run downloads Gradle, SQLite and JUnit, so it needs internet and takes a minute or two. On Windows, use `gradlew.bat` instead of `./gradlew`.
 
 ## 3. Run the tests
 
@@ -32,7 +29,7 @@ The first `./gradlew` command downloads Gradle and the project's two libraries (
 ./gradlew test
 ```
 
-Each test uses a temporary database that is deleted afterward, so tests leave no files behind. The test names say what each one checks.
+Each test uses a temporary database and leaves no files behind. Test names say what each one checks.
 
 ## 4. Run the demo
 
@@ -44,23 +41,35 @@ Output looks like this:
 
 ```
 Simulated dispatch DEMO0001: 12 kW requested
+
+Primary stopped after sending to battery-2, before recording it:
   battery-1   5 kW  RECEIVED
-  battery-2   5 kW  SENT
-  battery-3   2 kW  RECEIVED
-Planned 12 kW, confirmed 7 kW (2 of 3 confirmations recorded)
+  battery-2   5 kW  PLANNED
+  battery-3   2 kW  PLANNED
+
+Backup took the lease 11 s later and recovered the dispatch:
+  battery-1   5 kW  RECEIVED
+  battery-2   5 kW  RECEIVED
+  battery-3   2 kW  SENT
+Planned 12 kW, confirmed 10 kW (2 of 3 confirmations recorded)
+Every command sent 11 s after the event was received (CSIP limit: 15 min)
 
 Dispatch progress saved to:
   /path/to/vpp-dispatch-reliability/data/demo.db
 ```
 
-`battery-2` stays `SENT` because its confirmation was deliberately lost: the record shows exactly what is known.
+What happened:
+- The primary sent battery-2 its command and stopped before recording it, so the record still says `PLANNED` even though the device has the command.
+- Once the primary's lease expired, the backup took it, sent again every command not yet `RECEIVED`, and left battery-1 alone.
+- `battery-3` stays `SENT` because its confirmation was deliberately lost: the record shows exactly what is known.
+- Time is simulated, so the demo finishes at once.
 
-**Where the database goes:** `data/demo.db` in the project folder. Each run replaces it. To write it elsewhere, pass a path ending in `.db`: `./gradlew run --args="/tmp/my-dispatch.db"` (other file names are refused, so the demo can never replace a file that isn't a database). The `data/` folder is never committed; delete it to remove the demo's output.
+**The database** is `data/demo.db`, replaced on each run and never committed. To write it elsewhere: `./gradlew run --args="/tmp/my-dispatch.db"` (the name must end in `.db`).
 
-**Look inside it** with the `sqlite3` tool (included with macOS and most Linux distributions):
+**Look inside it** with `sqlite3` (included with macOS and most Linux):
 
 ```bash
-sqlite3 data/demo.db "SELECT command_id, target_kw, state FROM device_command;"
+sqlite3 data/demo.db "SELECT command_id, target_kw, state, last_sent_at FROM device_command;"
 ```
 
 ## Troubleshooting

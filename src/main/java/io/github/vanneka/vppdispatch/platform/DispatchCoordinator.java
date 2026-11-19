@@ -11,6 +11,9 @@ import io.github.vanneka.vppdispatch.storage.CommandState;
 import io.github.vanneka.vppdispatch.storage.DispatchStore;
 import io.github.vanneka.vppdispatch.storage.StoredCommand;
 import io.github.vanneka.vppdispatch.utility.SimulatedUtilityServer;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -29,20 +32,35 @@ import java.util.Optional;
  */
 public final class DispatchCoordinator {
 
+    /**
+     * CSIP's limit for an aggregator to pass a control on to its devices: "within 15
+     * minutes of receiving the control from the server" (CSIP v2.1, §4.5).
+     */
+    public static final Duration CSIP_TRANSFER_LIMIT = Duration.ofMinutes(15);
+
     private final SimulatedFleet fleet;
     private final DispatchStore store;
     private final DeviceSelector selector;
     private final LeaderElection leader;
     private final SimulatedCrash crash;
+    private final Clock clock;
 
     /** A coordinator for a single server that is always in charge, with no crash. */
     public DispatchCoordinator(SimulatedFleet fleet, DispatchStore store) {
-        this(fleet, store, LeaderElection.alwaysInCharge(), SimulatedCrash.none());
+        this(fleet, store, LeaderElection.alwaysInCharge(), SimulatedCrash.none(), Clock.systemUTC());
     }
 
     /** A coordinator that dispatches only while it holds the lease; {@code crash} is for tests. */
     public DispatchCoordinator(
             SimulatedFleet fleet, DispatchStore store, LeaderElection leader, SimulatedCrash crash) {
+        this(fleet, store, leader, crash, Clock.systemUTC());
+    }
+
+    /** As above, with times (received, sent) taken from {@code clock}; tests pass a manual clock. */
+    public DispatchCoordinator(
+            SimulatedFleet fleet, DispatchStore store, LeaderElection leader, SimulatedCrash crash,
+            Clock clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
         this.fleet = Objects.requireNonNull(fleet, "fleet");
         this.store = Objects.requireNonNull(store, "store");
         this.leader = Objects.requireNonNull(leader, "leader");
@@ -63,7 +81,7 @@ public final class DispatchCoordinator {
 
         // 1. Choose devices and save the whole plan before sending anything.
         List<DeviceCommand> commands = selector.select(request, fleet.devices());
-        store.saveDispatch(request, commands);
+        store.saveDispatch(request, commands, clock.instant());
 
         // 2. Send each command and record what happened.
         sendInOrder(commands);
@@ -124,9 +142,34 @@ public final class DispatchCoordinator {
             DeviceCommand command = commands.get(index);
             Optional<DeviceResponse> response = fleet.send(command);
             crash.afterSend(index); // tests only: may stop here, before anything is recorded
-            store.markSent(command.commandId());
+            store.markSent(command.commandId(), clock.instant());
             response.ifPresent(r -> store.markReceived(r.commandId()));
         }
+    }
+
+    /**
+     * How long it took, from receiving the event, until every command in the plan had
+     * been sent; empty if any command has never been recorded as sent. Uses the latest
+     * recorded send of each command.
+     */
+    public Optional<Duration> timeToSendAll(String mrid) {
+        Instant receivedAt = store.receivedAt(mrid);
+        Instant lastSend = receivedAt;
+        for (StoredCommand entry : store.commandsFor(mrid)) {
+            Optional<Instant> sentAt = store.lastSentAt(entry.command().commandId());
+            if (sentAt.isEmpty()) {
+                return Optional.empty();
+            }
+            if (sentAt.get().isAfter(lastSend)) {
+                lastSend = sentAt.get();
+            }
+        }
+        return Optional.of(Duration.between(receivedAt, lastSend));
+    }
+
+    /** Whether every command in the plan was sent within {@code limit} of receiving the event. */
+    public boolean sentWithin(String mrid, Duration limit) {
+        return timeToSendAll(mrid).map(time -> time.compareTo(limit) <= 0).orElse(false);
     }
 
     /** Builds a summary from what is saved in the store, not from memory. */

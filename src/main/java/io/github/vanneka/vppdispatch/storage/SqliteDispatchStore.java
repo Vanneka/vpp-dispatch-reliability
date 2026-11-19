@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 /** A {@link DispatchStore} backed by a single SQLite file. */
 public final class SqliteDispatchStore implements DispatchStore {
@@ -42,7 +43,8 @@ public final class SqliteDispatchStore implements DispatchStore {
                         creation_time    TEXT NOT NULL,
                         target_kw        INTEGER NOT NULL,
                         start_time       TEXT NOT NULL,
-                        duration_seconds INTEGER NOT NULL
+                        duration_seconds INTEGER NOT NULL,
+                        received_at      TEXT NOT NULL
                     )""");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS device_command (
@@ -51,24 +53,28 @@ public final class SqliteDispatchStore implements DispatchStore {
                         device_id        TEXT NOT NULL,
                         target_kw        INTEGER NOT NULL,
                         plan_order       INTEGER NOT NULL,
-                        state            TEXT NOT NULL
+                        state            TEXT NOT NULL,
+                        last_sent_at     TEXT
                     )""");
         }
     }
 
     @Override
-    public void saveDispatch(DispatchRequest request, List<DeviceCommand> commands) {
+    public void saveDispatch(DispatchRequest request, List<DeviceCommand> commands, Instant receivedAt) {
         try {
             connection.setAutoCommit(false);
             try (PreparedStatement insertDispatch = connection.prepareStatement(
-                            "INSERT INTO dispatch VALUES (?, ?, ?, ?, ?)");
+                            "INSERT INTO dispatch (mrid, creation_time, target_kw, start_time,"
+                                    + " duration_seconds, received_at) VALUES (?, ?, ?, ?, ?, ?)");
                     PreparedStatement insertCommand = connection.prepareStatement(
-                            "INSERT INTO device_command VALUES (?, ?, ?, ?, ?, ?)")) {
+                            "INSERT INTO device_command (command_id, mrid, device_id, target_kw,"
+                                    + " plan_order, state) VALUES (?, ?, ?, ?, ?, ?)")) {
                 insertDispatch.setString(1, request.mrid());
                 insertDispatch.setString(2, request.creationTime().toString());
                 insertDispatch.setInt(3, request.targetKw());
                 insertDispatch.setString(4, request.startTime().toString());
                 insertDispatch.setLong(5, request.duration().toSeconds());
+                insertDispatch.setString(6, receivedAt.toString());
                 insertDispatch.executeUpdate();
 
                 int order = 0;
@@ -107,8 +113,55 @@ public final class SqliteDispatchStore implements DispatchStore {
     }
 
     @Override
+    public Instant receivedAt(String mrid) {
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT received_at FROM dispatch WHERE mrid = ?")) {
+            query.setString(1, mrid);
+            try (ResultSet rows = query.executeQuery()) {
+                if (!rows.next()) {
+                    throw new StoreException("no dispatch with mrid " + mrid, null);
+                }
+                return Instant.parse(rows.getString("received_at"));
+            }
+        } catch (SQLException e) {
+            throw new StoreException("could not read dispatch " + mrid, e);
+        }
+    }
+
+    @Override
     public boolean markSent(String commandId) {
         return moveForward(commandId, CommandState.SENT);
+    }
+
+    @Override
+    public boolean markSent(String commandId, Instant sentAt) {
+        boolean moved = moveForward(commandId, CommandState.SENT);
+        try (PreparedStatement update = connection.prepareStatement(
+                "UPDATE device_command SET last_sent_at = ? WHERE command_id = ?")) {
+            update.setString(1, sentAt.toString());
+            update.setString(2, commandId);
+            update.executeUpdate();
+        } catch (SQLException e) {
+            throw new StoreException("could not update command " + commandId, e);
+        }
+        return moved;
+    }
+
+    @Override
+    public Optional<Instant> lastSentAt(String commandId) {
+        try (PreparedStatement query = connection.prepareStatement(
+                "SELECT last_sent_at FROM device_command WHERE command_id = ?")) {
+            query.setString(1, commandId);
+            try (ResultSet rows = query.executeQuery()) {
+                if (!rows.next()) {
+                    throw new StoreException("no command with id " + commandId, null);
+                }
+                String value = rows.getString("last_sent_at");
+                return value == null ? Optional.empty() : Optional.of(Instant.parse(value));
+            }
+        } catch (SQLException e) {
+            throw new StoreException("could not read command " + commandId, e);
+        }
     }
 
     @Override

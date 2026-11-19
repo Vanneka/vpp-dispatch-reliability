@@ -40,7 +40,8 @@ class CommandStateRecordTest {
         DispatchRequest request = new DispatchRequest(
                 MRID, Instant.parse("2026-07-15T18:00:00Z"), 5,
                 Instant.parse("2026-07-15T21:00:00Z"), Duration.ofHours(2));
-        store.saveDispatch(request, List.of(DeviceCommand.forDevice(request, "battery-1", 5)));
+        store.saveDispatch(request, List.of(DeviceCommand.forDevice(request, "battery-1", 5)),
+                Instant.parse("2026-07-15T18:00:00Z"));
     }
 
     @AfterEach

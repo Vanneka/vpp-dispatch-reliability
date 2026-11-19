@@ -2,7 +2,9 @@ package io.github.vanneka.vppdispatch.storage;
 
 import io.github.vanneka.vppdispatch.protocol.DeviceCommand;
 import io.github.vanneka.vppdispatch.protocol.DispatchRequest;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Durable record of dispatch progress: which devices were chosen, which commands
@@ -11,8 +13,16 @@ import java.util.List;
  */
 public interface DispatchStore extends AutoCloseable {
 
-    /** Saves a dispatch and all of its planned commands together, or none of them. */
-    void saveDispatch(DispatchRequest request, List<DeviceCommand> commands);
+    /**
+     * Saves a dispatch and all of its planned commands together, or none of them.
+     *
+     * @param receivedAt when the platform received the event (the start of CSIP's
+     *     15-minute transfer limit)
+     */
+    void saveDispatch(DispatchRequest request, List<DeviceCommand> commands, Instant receivedAt);
+
+    /** When the platform received this event, as saved with the dispatch. */
+    Instant receivedAt(String mrid);
 
     /** Whether a dispatch with this event ID (mRID) has already been saved. */
     boolean hasDispatch(String mrid);
@@ -27,6 +37,12 @@ public interface DispatchStore extends AutoCloseable {
      * @throws StoreException if no command has this ID
      */
     boolean markSent(String commandId);
+
+    /** Like {@link #markSent(String)}, and also saves {@code sentAt} as the command's latest send time. */
+    boolean markSent(String commandId, Instant sentAt);
+
+    /** When the command was last recorded as sent, or empty if it never was. */
+    Optional<Instant> lastSentAt(String commandId);
 
     /**
      * Records that the device's control unit confirmed it has the command. Allowed

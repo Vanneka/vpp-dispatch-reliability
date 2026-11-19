@@ -2,56 +2,88 @@
 
 [![Tests](https://github.com/Vanneka/vpp-dispatch-reliability/actions/workflows/test.yml/badge.svg)](https://github.com/Vanneka/vpp-dispatch-reliability/actions/workflows/test.yml)
 
-Open-source reference code for keeping a virtual power plant's (VPP's) dispatch correct when the platform's own servers fail: recovering in-progress dispatches, rejecting outdated commands, and confirming device responses.
+Open-source reference code for keeping a **virtual power plant (VPP)** dispatch correct when the platform's own servers fail.
 
-> **Status:** v0.1.0 released (pre-release); v0.2.0, recovery after a failover, is in progress. Everything runs against a **simulated** fleet. This is a reference to read, run, and test against, not a product, and it makes no claims about real-world performance.
+**The question:** when a VPP platform's server fails partway through a dispatch, how does the backup finish the job without skipping or doubling a command?
 
-## The problem in 30 seconds
+> **Status:** v0.2.0, pre-release. Everything runs against a **simulated** fleet. No real-world performance is claimed.
 
-A VPP coordinates thousands of home batteries, but every dispatch decision runs through one software platform, which Idaho National Laboratory calls the "operational 'brain' of a VPP" and "a concentrated digital dependency for grid services" (INL, 2026, §7.2). Devices already have fallbacks when they lose contact (CSIP v2.1, §4.4.2). The platform needs its own: if its server fails partway through a dispatch, the backup must know which devices were already told what, and finish the job without skipping or doubling a command.
+## Why it matters
 
-Read more: [Failover Isn't Enough: The Half-Finished Dispatch](https://vanneka-okeke.medium.com/failover-isnt-enough-the-half-finished-dispatch-b7815acd1148).
+In a centralized design every dispatch decision runs through one software platform, which Idaho National Laboratory calls "a concentrated digital dependency for grid services" (INL, 2026, §7.2). Devices already have fallbacks when they lose contact (CSIP v2.1, §4.4.2). The platform needs its own.
 
-## Quick start
+## What v0.2.0 shows
 
-You need Java 21 ([how to install it](docs/getting-started.md)). Gradle downloads itself.
+- **The gap is real.** If the primary stops after sending a command but before recording it, the record says `PLANNED` while the device already has the command.
+- **The backup closes it.** After a failover it sends again every command not yet `RECEIVED`, and leaves confirmed ones alone. Each device ends up with the planned command.
+- **Sending twice is safe by design.** A command keeps the same ID (`mrid:deviceId`) and carries an absolute value for an absolute time window, so a second copy says exactly what the first said.
+- **Missed events are picked up.** An event issued while no server was in charge is found on the utility's list and dispatched.
+- **CSIP's 15-minute limit is met.** After a simulated crash and failover, every command is sent 11 s after the event arrived (simulated time).
+
+## How it works
+
+```mermaid
+flowchart LR
+    U["Utility server<br/>(list of events)"] -- "event" --> P["Primary"]
+    U -. "re-read after failover" .-> B["Backup"]
+    P <--> R[("Shared SQLite file<br/>lease + dispatch record")]
+    B <--> R
+    P -- "commands" --> D["Devices<br/>(simulated)"]
+    B -- "commands not yet RECEIVED" --> D
+```
+
+- **A lease decides who is in charge.** The primary renews it every few seconds. If it stops, the lease expires after 10 s and the backup takes it.
+- **The whole plan is saved before anything is sent**, and each command's state only moves forward: `PLANNED` → `SENT` → `RECEIVED`.
+- **Real platforms get leader election from their infrastructure** (for example, [Kubernetes Leases](https://kubernetes.io/docs/concepts/architecture/leases/)). What it doesn't decide is what to do with a half-finished dispatch. That is what this project shows.
+
+## Run it
 
 ```bash
 git clone https://github.com/Vanneka/vpp-dispatch-reliability.git
 cd vpp-dispatch-reliability
-./gradlew test   # run the tests
-./gradlew run    # run one simulated dispatch
+./gradlew test   # 30 tests
+./gradlew run    # a dispatch with a failover, saved to data/demo.db
 ```
 
-The demo dispatches 12 kW across four simulated batteries, with one battery's confirmation deliberately lost, and saves every step to `data/demo.db`. Problems or questions: see [Getting started](docs/getting-started.md).
+You need Java 21. Setup, demo output and troubleshooting: [Getting started](docs/getting-started.md).
 
-## What's in it
+## How this maps to CSIP
 
-| Release | Adds | Status |
-|---|---|---|
-| v0.1.0 | Simulated fleet; every step of a dispatch saved to SQLite as it happens | Released |
-| v0.2.0 | Commands identified by the utility's event ID; primary and backup with a lease; **recovery after a failover**, so each device ends up with one effective command | In progress |
-| v0.3.0 | Rejecting outdated or superseded commands | Planned |
-| v0.4.0 | Reliable device responses: retries, each response counted once | Planned |
-| v1.0.0 | Fault-injection test harness and a full write-up | Planned |
+| Here | In CSIP / IEEE 2030.5 |
+|---|---|
+| The platform | The aggregator, in the aggregator-mediated setup (§3.2) |
+| `DispatchRequest` | A DERControl event: `mRID`, `creationTime`, start and duration (Figure 12) |
+| `SimulatedUtilityServer` | The DERControlList the aggregator can fetch (§6.2.4) |
+| `DeviceCommand` | Internal: aggregator-to-device is "outside the scope of CSIP" (§6.2.4) |
+| `CSIP_TRANSFER_LIMIT` | "within 15 minutes of receiving the control from the server" (§4.5) |
 
-What changed in each release: [CHANGELOG](CHANGELOG.md).
+## Roadmap
 
-## Simulation, not a deployment
+- [x] **v0.1.0:** simulated fleet; every step of a dispatch saved as it happens
+- [x] **v0.2.0:** primary and backup with a lease; recovery after a failover; 15-minute transfer limit
+- [ ] **v0.3.0:** rejecting outdated or superseded commands; replacement commands
+- [ ] **v0.4.0:** retries, with each device response counted once
+- [ ] **v1.0.0:** fault-injection test harness and a full write-up
 
-Two copies of the platform run inside one program, with a lease in SQLite deciding which is in charge. Real platforms get failure detection and leader election from their infrastructure; what that infrastructure doesn't decide is what to do with a dispatch that was half-finished when the old primary stopped. That recovery is what this project shows. Details: [design notes](docs/design.md).
+What changed in each release: [CHANGELOG](CHANGELOG.md). Design decisions: [design notes](docs/design.md).
 
-## Learn more
+## Limitations
 
-- [Design notes](docs/design.md): decisions, how the code is organized, known limitations
-- [Getting started](docs/getting-started.md): installing Java, running the demo, troubleshooting
-- Blog series on the software behind VPPs: [post 3](https://vanneka-okeke.medium.com/the-brain-of-a-virtual-power-plant-why-its-reliability-matters-7c3855f928ed), [post 4](https://vanneka-okeke.medium.com/failover-isnt-enough-the-half-finished-dispatch-b7815acd1148)
+- Devices, the network and time are simulated; sending takes no time.
+- Recovery handles the start of an event only.
+- Replacement commands, retries and a paused primary are not handled yet.
+
+Details and planned fixes: [design notes](docs/design.md#not-covered-yet).
+
+## Read more
+
+Blog series on the software behind VPPs: [post 3](https://vanneka-okeke.medium.com/the-brain-of-a-virtual-power-plant-why-its-reliability-matters-7c3855f928ed), [post 4](https://vanneka-okeke.medium.com/failover-isnt-enough-the-half-finished-dispatch-b7815acd1148).
 
 ## Sources
 
-- M. Culler et al., *Virtual Power Plant Architecture and Resilient Design*, INL/RPT-26-89692, Idaho National Laboratory, January 2026. https://inl.gov/content/uploads/2026/01/VPP-Architecture-and-Design-Report__Final.pdf
-- Common Smart Inverter Profile Working Group, *Common Smart Inverter Profile: IEEE 2030.5 Implementation Guide for Smart Inverters*, v2.1, March 2018. https://sunspec.org/wp-content/uploads/2025/01/CSIPImplementationGuidev2.103-15-2018.pdf
-- G. Zhang, C. Jiang, X. Wang, "Comprehensive review on structure and operation of virtual power plant in electrical system," *IET Generation, Transmission & Distribution* 13(2), 145–156, 2019. https://doi.org/10.1049/iet-gtd.2018.5880
+- M. Culler et al., *Virtual Power Plant Architecture and Resilient Design*, INL/RPT-26-89692, Idaho National Laboratory, 2026. https://inl.gov/content/uploads/2026/01/VPP-Architecture-and-Design-Report__Final.pdf
+- *Common Smart Inverter Profile: IEEE 2030.5 Implementation Guide for Smart Inverters*, v2.1, 2018. https://sunspec.org/wp-content/uploads/2025/01/CSIPImplementationGuidev2.103-15-2018.pdf
+- G. Zhang, C. Jiang, X. Wang, "Comprehensive review on structure and operation of virtual power plant in electrical system," *IET GTD* 13(2), 2019. https://doi.org/10.1049/iet-gtd.2018.5880
 
 ## License
 

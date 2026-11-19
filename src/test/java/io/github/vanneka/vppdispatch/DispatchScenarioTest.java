@@ -129,11 +129,11 @@ class DispatchScenarioTest {
         List<DeviceCommand> brokenPlan = List.of(first, first);
 
         try (SqliteDispatchStore store = new SqliteDispatchStore(tempDir.resolve("progress.db"))) {
-            assertThrows(StoreException.class, () -> store.saveDispatch(request, brokenPlan));
+            assertThrows(StoreException.class, () -> store.saveDispatch(request, brokenPlan, request.creationTime()));
             assertTrue(store.commandsFor("dispatch-5").isEmpty());
 
             // The dispatch row was rolled back too, so the same dispatch can be saved cleanly.
-            store.saveDispatch(request, List.of(first));
+            store.saveDispatch(request, List.of(first), request.creationTime());
             assertEquals(1, store.commandsFor("dispatch-5").size());
         }
     }
